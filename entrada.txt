@@ -1,0 +1,8 @@
+Add A B
+Add B C
+Add A C
+Find A
+Find Z
+Clique
+Follow 2
+Compact
