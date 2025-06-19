@@ -6,56 +6,58 @@
 
 void RedSocial::ejecutar_comando(const std::string &linea)
 {
-    std::istringstream iss(linea);
-    std::string cmd;
-    iss >> cmd;
+    // Copiamos y quitamos CR/LF y espacios finales
+    std::string l = linea;
+    while (!l.empty() && std::isspace(static_cast<unsigned char>(l.back())))
+        l.pop_back();
 
-    if (cmd == "add")
+    // Separamos el comando del resto
+    std::string cmd, rest;
+    auto pos = l.find(' ');
+    if (pos == std::string::npos)
     {
+        cmd = l;
+    }
+    else
+    {
+        cmd = l.substr(0, pos);
+        rest = l.substr(pos + 1);
+    }
+
+    // Y ahora comparamos
+    if (cmd == "Add")
+    {
+        std::istringstream iss(rest);
         std::string u1, u2;
         iss >> u1 >> u2;
         add(u1, u2);
     }
-    else if (cmd == "find")
+    else if (cmd == "Find")
     {
-        std::string u;
-        iss >> u;
-        bool existe = find(u);
-        std::cout << (existe ? "Si" : "No") << "\n";
+        // rest es directamente el nombre de usuario
+        bool existe = find(rest);
+        std::cout << (existe ? "Yes\n" : "No\n");
     }
-    else if (cmd == "clique")
+    else if (cmd == "Clique")
     {
-        auto clqs = clique();
-        for (auto &c : clqs)
+        for (auto &c : clique())
         {
             for (size_t i = 0; i < c.size(); ++i)
                 std::cout << c[i] << (i + 1 < c.size() ? ' ' : '\n');
         }
     }
-    else if (cmd == "compact")
+    else if (cmd == "Compact")
     {
-        auto aristas = compact();
-        for (auto &p : aristas)
+        for (auto &p : compact())
             std::cout << "(" << p.first << ", " << p.second << ")\n";
     }
-    else if (cmd == "follow")
+    else if (cmd == "Follow")
     {
-        int n;
-        iss >> n;
-        auto lista = follow(n);
-        for (auto &u : lista)
-        {
+        int n = std::stoi(rest);
+        for (auto &u : follow(n))
             std::cout << u << "\n";
-        }
     }
-    else if (cmd == "Exit")
-    {
-        std::cout << "Saliendo del programa.\n";
-    }
-    else
-    {
-        std::cout << "Comando no reconocido: " << cmd << "\n";
-    }
+    // si quieres, puedes manejar un else para errores
 }
 
 // Metodo Add: agrega la relación de amistad entre 2 usuarios u1 y u2
@@ -68,15 +70,18 @@ void RedSocial::add(const std::string &u1, const std::string &u2)
     grafo[u2].insert(u1);
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// Implementación del recorrido DFS privado (recursivo)
-bool RedSocial::dfs(const std::string &actual, const std::string &objetivo, std::unordered_set<std::string> &visitados) const
+// private helper: busca 'objetivo' en el subgrafo de 'actual'
+bool RedSocial::dfs(const std::string &actual,
+                    const std::string &objetivo,
+                    std::unordered_set<std::string> &visitados) const
 {
     if (actual == objetivo)
         return true;
     visitados.insert(actual);
+    // recorrer vecinos
     for (const auto &vecino : grafo.at(actual))
     {
-        if (visitados.find(vecino) == visitados.end())
+        if (!visitados.count(vecino))
         {
             if (dfs(vecino, objetivo, visitados))
                 return true;
@@ -85,29 +90,17 @@ bool RedSocial::dfs(const std::string &actual, const std::string &objetivo, std:
     return false;
 }
 
-// Metodo Find: (usando DFS), busca si el usuario es parte o no de la red social
+// public: devuelve true si el usuario 'u' está en la red
 bool RedSocial::find(const std::string &u) const
 {
-    if (grafo.empty())
+    // si no existe clave, ni siquiera arrancamos
+    auto it = grafo.find(u);
+    if (it == grafo.end())
         return false;
 
-    if (grafo.find(u) == grafo.end())
-        return false;
-
+    // si existe, hacemos DFS desde 'u' a 'u' (es un ciclo trivial)
     std::unordered_set<std::string> visitados;
-
-    // Buscar en todas las componentes conectadas
-    for (const auto &par : grafo)
-    {
-        const std::string &nodo = par.first;
-        if (visitados.find(nodo) == visitados.end())
-        {
-            if (dfs(nodo, u, visitados))
-                return true;
-        }
-    }
-
-    return false;
+    return dfs(u, u, visitados);
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // Metodo Follow: Encuentra los n usuarios más importantes de la red (importacia=numero de amigos -> grado del nodo)
@@ -138,3 +131,87 @@ std::vector<std::string> RedSocial::follow(int n) const
 
     return resultado;
 }
+
+// Bron–Kerbosch recursivo para encontrar todos los cliques máximos
+static void bronk(
+    const std::unordered_map<std::string, std::unordered_set<std::string>> &grafo,
+    std::vector<std::string> &R,
+    std::unordered_set<std::string> &P,
+    std::unordered_set<std::string> &X,
+    std::vector<std::vector<std::string>> &cliques)
+{
+    if (P.empty() && X.empty())
+    {
+        // es un clique maximal
+        if (R.size() >= 3 && R.size() <= 5)
+        {
+            std::vector<std::string> clique = R;
+            std::sort(clique.begin(), clique.end());
+            cliques.push_back(clique);
+        }
+        return;
+    }
+
+    // iteramos sobre una copia de P para poder modificar P sobre la marcha
+    std::vector<std::string> Pvec(P.begin(), P.end());
+    for (const auto &v : Pvec)
+    {
+        if (!P.count(v))
+            continue; // ya fue retirado
+        // R' = R ∪ {v}
+        R.push_back(v);
+
+        // P' = P ∩ N(v)
+        std::unordered_set<std::string> P2;
+        for (auto &u : P)
+            if (grafo.at(v).count(u))
+                P2.insert(u);
+
+        // X' = X ∩ N(v)
+        std::unordered_set<std::string> X2;
+        for (auto &u : X)
+            if (grafo.at(v).count(u))
+                X2.insert(u);
+
+        bronk(grafo, R, P2, X2, cliques);
+
+        // Deshacer cambios: R deja de contener v; mover v de P a X
+        R.pop_back();
+        P.erase(v);
+        X.insert(v);
+    }
+}
+
+std::vector<std::vector<std::string>> RedSocial::clique() const
+{
+    std::vector<std::vector<std::string>> cliques;
+    std::vector<std::string> R;
+    std::unordered_set<std::string> P, X;
+
+    // Inicializar P = todos los vértices del grafo
+    for (auto &kv : grafo)
+    {
+        P.insert(kv.first);
+    }
+
+    bronk(grafo, R, P, X, cliques);
+
+    // Ordenamos la lista de cliques: primero por tamaño (asc), luego lexicográficamente
+    std::sort(cliques.begin(), cliques.end(),
+              [](auto &a, auto &b)
+              {
+                  if (a.size() != b.size())
+                      return a.size() < b.size();
+                  return a < b; // vector<string> define comparación lex
+              });
+
+    return cliques;
+}
+
+std::vector<std::pair<std::string, std::string>> RedSocial::compact() const
+{
+    // TODO: implementar compactación de cliques
+    return {};
+}
+
+// ------------------------------------------------------------
