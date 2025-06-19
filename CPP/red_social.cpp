@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <set>
 
 void RedSocial::ejecutar_comando(const std::string &linea)
 {
@@ -210,8 +211,50 @@ std::vector<std::vector<std::string>> RedSocial::clique() const
 
 std::vector<std::pair<std::string, std::string>> RedSocial::compact() const
 {
-    // TODO: implementar compactación de cliques
-    return {};
-}
+    // 1) Obtengo los cliques que ya calcula clique()
+    auto clqs = clique();
 
-// ------------------------------------------------------------
+    // 2) Asigno un nombre “Componente 1”, “Componente 2”, … a cada clique
+    std::unordered_map<std::string, std::string> compMap;
+    for (size_t i = 0; i < clqs.size(); ++i)
+    {
+        std::string comp = "Componente " + std::to_string(i + 1);
+        for (auto &v : clqs[i])
+        {
+            compMap[v] = comp;
+        }
+    }
+    // 3) Los vértices que no están en ningún clique se quedan con su propio nombre
+    for (auto &kv : grafo)
+    {
+        if (!compMap.count(kv.first))
+            compMap[kv.first] = kv.first;
+    }
+
+    // 4) Recorro cada arista (u,v) del grafo original y la agrego al grafo compactado
+    //    pero sólo si mapea a dos vértices distintos
+    std::set<std::pair<std::string, std::string>> edgeSet;
+    for (auto &kv : grafo)
+    {
+        auto u = kv.first;
+        for (auto &v : kv.second)
+        {
+            if (u < v)
+            { // evitar duplicados
+                auto mu = compMap[u];
+                auto mv = compMap[v];
+                if (mu != mv)
+                {
+                    // normalizo el orden para que siempre salga (a, b) con a < b
+                    if (mu < mv)
+                        edgeSet.emplace(mu, mv);
+                    else
+                        edgeSet.emplace(mv, mu);
+                }
+            }
+        }
+    }
+
+    // 5) Paso el set a un vector para devolverlo
+    return std::vector<std::pair<std::string, std::string>>(edgeSet.begin(), edgeSet.end());
+}
